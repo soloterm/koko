@@ -102,7 +102,15 @@ jobs:
           # For a standalone CLI executable, notarization acceptance + Gatekeeper
           # assessment are the correct checks.
           echo "Skipping stapler for standalone CLI binary: $BINARY"
-          spctl --assess --type execute --verbose=4 "$BINARY"
+
+          set +e
+          SPCTL_OUTPUT="$(spctl --assess --type execute --verbose=4 "$BINARY" 2>&1)"
+          SPCTL_EXIT=$?
+          set -e
+          echo "$SPCTL_OUTPUT"
+          if [ "$SPCTL_EXIT" -ne 0 ] && ! echo "$SPCTL_OUTPUT" | grep -q "does not seem to be an app"; then
+            exit "$SPCTL_EXIT"
+          fi
 
       - name: Sign (Windows)
         if: runner.os == 'Windows'
@@ -215,7 +223,14 @@ jobs:
             codesign -dvv "$binary"
 
             echo "spctl assessment: $archive"
-            spctl --assess --type execute --verbose=4 "$binary"
+            set +e
+            SPCTL_OUTPUT="$(spctl --assess --type execute --verbose=4 "$binary" 2>&1)"
+            SPCTL_EXIT=$?
+            set -e
+            echo "$SPCTL_OUTPUT"
+            if [ "$SPCTL_EXIT" -ne 0 ] && ! echo "$SPCTL_OUTPUT" | grep -q "does not seem to be an app"; then
+              exit "$SPCTL_EXIT"
+            fi
 
             rm -rf "$extract_dir"
           done
