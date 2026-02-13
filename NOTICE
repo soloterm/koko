@@ -1,0 +1,9 @@
+soloterm/koko
+Copyright 2025 Solo Terminal, Inc.
+
+This product is based on kokorox (https://github.com/WismutHansen/kokorox)
+which is based on Kokoros (https://github.com/lucasjinreal/Kokoros)
+by Lucas Jin, licensed under the Apache License 2.0.
+
+This product includes the Kokoro-82M model (https://huggingface.co/hexgrad/Kokoro-82M)
+licensed under the Apache License 2.0.
