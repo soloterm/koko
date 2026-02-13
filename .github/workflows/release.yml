@@ -138,16 +138,20 @@ jobs:
             tar czf ../${{ matrix.name }}.tar.gz *
           fi
 
-      - name: Generate checksums
+      - name: Generate checksums (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $file = "${{ matrix.name }}.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLower()
+          "$hash  $file" | Out-File -FilePath "${{ matrix.name }}.sha256" -Encoding ascii
+
+      - name: Generate checksums (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
-
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            shasum -a 256 ${{ matrix.name }}.zip > ${{ matrix.name }}.sha256
-          else
-            shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.sha256
-          fi
+          shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.sha256
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
