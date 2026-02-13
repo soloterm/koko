@@ -1,6 +1,13 @@
 name: Release
+run-name: Release ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g., v1.2.3)'
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
@@ -8,8 +15,36 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.vars.outputs.release_tag }}
+    steps:
+      - id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "$TAG" =~ ^v[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "Invalid tag '$TAG'. Expected prefix 'v' and a valid version-like suffix."
+            exit 1
+          fi
+
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Using release tag: $TAG"
+
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -156,6 +191,7 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: |
             ${{ matrix.name }}.*
 
@@ -241,6 +277,7 @@ jobs:
 
   manifest:
     needs:
+      - prepare
       - build
       - verify-macos
     runs-on: ubuntu-latest
@@ -256,7 +293,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${{ needs.prepare.outputs.release_tag }}"
           VERSION="${TAG#v}"
           BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
 
@@ -291,4 +328,5 @@ jobs:
       - name: Upload manifest
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: manifest.json
