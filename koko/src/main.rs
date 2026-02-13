@@ -174,7 +174,7 @@ enum Mode {
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "koko")]
-#[command(version = "0.1")]
+#[command(version)]
 #[command(author = "Lucas Jin, Tommy Falkowski")]
 #[command(about = "Lightning fast text-to-speech CLI using the Kokoro model")]
 #[command(
@@ -220,7 +220,12 @@ struct Cli {
     model_path: Option<String>,
 
     /// Path to the voices data file on the filesystem (optional, defaults to HF cache)
-    #[arg(short = 'd', long = "data", value_name = "DATA_PATH")]
+    #[arg(
+        short = 'd',
+        long = "data",
+        visible_alias = "voices",
+        value_name = "DATA_PATH"
+    )]
     data_path: Option<String>,
 
     /// Model type to download from Hugging Face (fp16, q4, q4f16, q8f16, quantized, uint8, uint8f16)
@@ -234,7 +239,7 @@ struct Cli {
     #[arg(long = "chinese")]
     chinese: bool,
 
-    /// Silent Mode: If set to true, don't play audio when using Pipe  
+    /// Silent Mode: If set to true, don't play audio when using Pipe
     #[arg(short = 'x', long = "silent", value_name = "SILENT")]
     silent: bool,
 
@@ -489,6 +494,7 @@ fn preprocess_text_for_segmentation(text: &str, verbose: bool) -> String {
 fn postprocess_sentences(sentences: &[String], verbose: bool) -> Vec<String> {
     let mut result = Vec::new();
     let mut i = 0;
+    let ends_with_year_re = Regex::new(r"\b(19|20)\d{2}\s*$").unwrap();
 
     while i < sentences.len() {
         let mut current = sentences[i].clone();
@@ -501,9 +507,7 @@ fn postprocess_sentences(sentences: &[String], verbose: bool) -> Vec<String> {
             let next = &sentences[i + 1];
 
             // Pattern: current ends with a year + next starts with "to/until/through"
-            let ends_with_year = Regex::new(r"\b(19|20)\d{2}\s*$")
-                .unwrap()
-                .is_match(&current);
+            let ends_with_year = ends_with_year_re.is_match(&current);
             let starts_with_connector = next.trim().starts_with("to")
                 || next.trim().starts_with("To")
                 || next.trim().starts_with("until")
@@ -664,7 +668,7 @@ fn display_voices(
                 println!("{}", id);
             }
         }
-        "table" | _ => {
+        _ => {
             // Calculate column widths
             let id_width = voices
                 .iter()
@@ -947,6 +951,35 @@ fn ensure_parent_dir_exists(file_path: &str) -> io::Result<()> {
     Ok(())
 }
 
+#[repr(i32)]
+enum ExitCode {
+    ConfigError = 2,
+    RuntimeInitError = 10,
+    ModelNotFound = 20,
+    VoicesNotFound = 21,
+    GenerationError = 30,
+}
+
+fn exit_with_error(code: ExitCode, message: impl AsRef<str>) -> ! {
+    eprintln!("{}", message.as_ref());
+    std::process::exit(code as i32);
+}
+
+fn validate_optional_input_path(path: &Option<String>, code: ExitCode, label: &str) {
+    if let Some(path) = path {
+        if !Path::new(path).exists() {
+            exit_with_error(code, format!("{label} file not found: {path}"));
+        }
+    }
+}
+
+fn style_exists(style: &str, available_voices: &[String]) -> bool {
+    style.split('+').all(|part| {
+        let voice_id = part.split('.').next().unwrap_or_default().trim();
+        !voice_id.is_empty() && available_voices.iter().any(|v| v == voice_id)
+    })
+}
+
 /// Initialize espeak-ng data directory environment variable if not already set.
 /// This checks common system paths where espeak-ng-data may be installed on Linux.
 #[cfg(target_os = "linux")]
@@ -1002,7 +1035,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         let cli = Cli::parse();
-        
+
         // Handle config subcommand first (doesn't need TTS loaded)
         if let Mode::Config { paths, init } = &cli.mode {
             if *paths {
@@ -1010,8 +1043,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if *init {
                 if let Err(e) = AppConfig::ensure_config_exists() {
-                    eprintln!("Failed to create config: {}", e);
-                    std::process::exit(1);
+                    exit_with_error(ExitCode::ConfigError, format!("Failed to create config: {e}"));
                 }
             }
             if !*paths && !*init {
@@ -1040,12 +1072,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(());
         }
-        
+
         // Ensure XDG directories exist
         if let Err(e) = AppConfig::ensure_dirs_exist() {
             eprintln!("Warning: Failed to create XDG directories: {}", e);
         }
-        
+
         // Load configuration (CLI args will override these)
         let app_config = match AppConfig::load(cli.config_file.as_deref()) {
             Ok(config) => config,
@@ -1055,10 +1087,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 AppConfig::default()
             }
         };
-        
+
         // Merge CLI args with config (CLI takes priority)
         let resolved = ResolvedConfig::from_cli_and_config(&cli, &app_config);
-        
+
         // Auto-enable force_style if the user explicitly changed the style from the default
         // This ensures the specified style is respected
         let force_style = if cli.style.is_some() && resolved.style != "af_heart" && !resolved.force_style {
@@ -1068,7 +1100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             resolved.force_style
         };
-        
+
         // Extract resolved values for easier use
         let lan = resolved.lan.clone();
         let auto_detect = resolved.auto_detect;
@@ -1086,10 +1118,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let silent = resolved.silent;
         let mode = cli.mode.clone();
 
+        validate_optional_input_path(&model_path, ExitCode::ModelNotFound, "Model");
+        validate_optional_input_path(&data_path, ExitCode::VoicesNotFound, "Voices");
+
         // Initialize ONNX Runtime (required for CUDA with load-dynamic)
         if let Err(e) = kokorox::onn::init_ort(None) {
-            eprintln!("Failed to initialize ONNX Runtime: {}", e);
-            std::process::exit(1);
+            exit_with_error(
+                ExitCode::RuntimeInitError,
+                format!("Failed to initialize ONNX Runtime: {e}"),
+            );
         }
 
         // Determine model variant based on language
@@ -1112,7 +1149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => None,
             };
-            
+
             if let Some(text) = sample_text {
                 // Quick check: if text contains Chinese characters, use Chinese model
                 let has_chinese = text.chars().any(|c| {
@@ -1134,13 +1171,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             kokorox::utils::hf_cache::ModelVariant::V1English
         };
-        
+
         let tts = TTSKoko::new_with_variant(
-            model_path.as_deref(), 
+            model_path.as_deref(),
             data_path.as_deref(),
             model_type.as_deref(),
             variant
         ).await;
+
+        if (force_style || cli.style.is_some())
+            && !matches!(&mode, Mode::Voices { .. } | Mode::Config { .. })
+        {
+            let available_voices = tts.get_available_voices();
+            if !style_exists(&style, &available_voices) {
+                exit_with_error(
+                    ExitCode::VoicesNotFound,
+                    format!(
+                        "Voice style not found: {style}. Run `koko voices --format list` to inspect available voices."
+                    ),
+                );
+            }
+        }
 
         match &mode {
             Mode::Config { .. } => {
@@ -1155,7 +1206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Use resolved config for output path if not specified on CLI
                 let output_format = resolved.file_output_path_format(save_path_format, &app_config);
                 ensure_parent_dir_exists(&output_format)?;
-                
+
                 let file_content = fs::read_to_string(input_path)?;
                 for (i, line) in file_content.lines().enumerate() {
                     let stripped_line = line.trim();
@@ -1164,7 +1215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     let save_path = output_format.replace("{line}", &i.to_string());
-                    tts.tts(TTSOpts {
+                    if let Err(e) = tts.tts(TTSOpts {
                         txt: stripped_line,
                         lan: &lan,
                         auto_detect_language: auto_detect,
@@ -1175,7 +1226,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         speed,
                         initial_silence,
                         phonemes,
-                    })?;
+                    }) {
+                        exit_with_error(
+                            ExitCode::GenerationError,
+                            format!("TTS generation failed for input line {}: {e}", i + 1),
+                        );
+                    }
                 }
             }
 
@@ -1183,9 +1239,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Use resolved config for output path if not specified on CLI
                 let output_path = resolved.text_output_path(save_path, &app_config);
                 ensure_parent_dir_exists(&output_path)?;
-                
+
                 let s = std::time::Instant::now();
-                tts.tts(TTSOpts {
+                if let Err(e) = tts.tts(TTSOpts {
                     txt: text,
                     lan: &lan,
                     auto_detect_language: auto_detect,
@@ -1196,12 +1252,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     speed,
                     initial_silence,
                     phonemes,
-                })?;
+                }) {
+                    exit_with_error(ExitCode::GenerationError, format!("TTS generation failed: {e}"));
+                }
                 println!("Time taken: {:?}", s.elapsed());
                 let words_per_second =
                     text.split_whitespace().count() as f32 / s.elapsed().as_secs_f32();
                 println!("Words per second: {:.2}", words_per_second);
-                
+
                 // Cleanup happens in the finally block at the end
                 // Do a clean exit now
                 return Ok(());
@@ -1213,7 +1271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let server_port = port.unwrap_or(resolved.server_openai_port);
                 let addr = SocketAddr::from((server_ip, server_port));
                 println!("Starting OpenAI-compatible HTTP server on {addr}");
-                
+
                 // Use TTSManager for dynamic model switching
                 let manager = TTSManager::with_variant(variant, model_type.clone()).await;
                 let app = kokorox_openai::create_server_with_manager(manager).await;
@@ -1230,7 +1288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let server_port = port.unwrap_or(resolved.server_websocket_port);
                 let addr = SocketAddr::from((server_ip, server_port));
                 println!("Starting WebSocket server on {addr}");
-                
+
                 // Use TTSManager for dynamic model switching
                 // Initialize with the currently selected variant
                 let manager = TTSManager::with_variant(variant, model_type.clone()).await;
@@ -1271,13 +1329,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Preprocess the text to handle problematic patterns before TTS processing
                     let preprocessed_text = preprocess_text_for_segmentation(stripped_line, verbose);
                     let final_text = preprocessed_text.replace("→", " ");
-                    
+
                     if verbose && final_text != stripped_line {
                         eprintln!("PREPROCESSING: Text was preprocessed for better segmentation");
                         eprintln!("Original: {}", stripped_line);
                         eprintln!("Preprocessed: {}", final_text);
                     }
-                    
+
                     match tts.tts_raw_audio(&final_text, &lan, &style, speed, initial_silence, auto_detect, force_style, phonemes) {
                         Ok(raw_audio) => {
                             // Write the raw audio samples directly
@@ -1293,13 +1351,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Use resolved config for output path if not specified on CLI
                 let output_path = resolved.pipe_output_path(cli_output_path, &app_config);
                 ensure_parent_dir_exists(&output_path)?;
-                
+
                 // Create an asynchronous reader for stdin.
                 let stdin = tokio::io::stdin();
                 let mut reader = BufReader::new(stdin);
                 // Comment removed: "This buffer stores text as it comes in from stdin"
                 // Unused variable removed
-                
+
                 // We don't need these variables anymore since we use session_language and session_style
 
                 // Set up audio plumbing once; choose later whether to play it.
@@ -1314,16 +1372,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     sink.append(source);
                     (Some(stream), Some(sink))
                 };
-                
+
                 // Configure TTS settings once at the beginning, but they can be updated
                 let mut session_language = lan.clone();
                 let mut session_style = style.clone();
-                
+
                 // Initialize language detection state.
                 // If auto_detect is false, language is already "detected" (we're using the specified one)
                 // If auto_detect is true, we need to perform detection
                 let mut language_detected = !auto_detect;
-                
+
                 // Print language selection mode clearly (always show this regardless of verbosity)
                 if auto_detect {
                     eprintln!("AUTO-DETECT MODE: Will determine language from text input");
@@ -1343,31 +1401,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // 1. Detect language from initial input
                 // 2. Process complete sentences as they arrive
                 // 3. Stream audio as soon as each sentence is processed
-                
+
                 // Keep track of accumulated text and sentence boundaries
                 let mut buffer = String::new();
-                
+
                 loop {
                     // Read a new line from stdin
                     if verbose {
                         eprintln!("BEFORE READ: About to read from stdin");
                     }
                     let mut line = String::new();
-                    
+
                     // Try to read using standard method first
                     let bytes_read = reader.read_line(&mut line).await?;
                     if bytes_read == 0 {
                         // EOF reached
                         break;
                     }
-                    
+
                     // Immediately verify UTF-8 validity and fix any potential issues
                     if String::from_utf8(line.clone().into_bytes()).is_err() {
                         eprintln!("WARNING: Invalid UTF-8 detected in input. Attempting to fix...");
                         // Use the lossy conversion to handle invalid UTF-8
                         line = String::from_utf8_lossy(line.as_bytes()).to_string();
                     }
-                    
+
                     // Debug print the raw input before any processing
                     if verbose {
                         eprintln!("RAW INPUT: '{}'", line);
@@ -1375,20 +1433,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             eprintln!("  Char {}: '{}' (Unicode: U+{:04X})", i, c, c as u32);
                         }
                     }
-                    
+
                     if verbose || debug_accents {
                         // Check specifically for encoding issues by comparing bytes vs chars
                         let bytes_count = line.len();
                         let chars_count = line.chars().count();
-                        eprintln!("ENCODING ANALYSIS: Bytes: {}, Chars: {}, Difference: {}", 
+                        eprintln!("ENCODING ANALYSIS: Bytes: {}, Chars: {}, Difference: {}",
                                 bytes_count, chars_count, bytes_count - chars_count);
-                        
+
                         // If the string contains multi-byte characters (like accents), there will be a difference
                         if bytes_count != chars_count {
                             eprintln!("MULTI-BYTE CHARS DETECTED: Line likely contains accented characters");
                         }
                     }
-                        
+
                     // Detailed logging for UTF-8 characters if debug_accents is enabled
                     if debug_accents {
                         for (i, c) in line.char_indices() {
@@ -1399,20 +1457,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .map(|b| format!("{:02X}", b))
                                     .collect::<Vec<_>>()
                                     .join(" ");
-                                
-                                eprintln!("  Char at byte {}: '{}' (U+{:04X}) - UTF-8: {}", 
+
+                                eprintln!("  Char at byte {}: '{}' (U+{:04X}) - UTF-8: {}",
                                         i, c, c as u32, byte_str);
                             }
                         }
                     }
-                    
+
                     // For Spanish, do a quick check on common accented words, but only in verbose mode
-                    if verbose && (session_language.starts_with("es") || 
-                        (auto_detect && !language_detected && 
+                    if verbose && (session_language.starts_with("es") ||
+                        (auto_detect && !language_detected &&
                         (line.contains("Hola") || line.contains("español")))) {
-                        
+
                         eprintln!("SPANISH CHECK: Looking for potential accent issues");
-                        
+
                         // Check for words that are commonly missing accents
                         let suspicious_words = [
                             ("politica", "política"),
@@ -1422,22 +1480,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ("educacion", "educación"),
                             ("comunicacion", "comunicación")
                         ];
-                        
+
                         for (incorrect, correct) in suspicious_words.iter() {
                             if line.contains(incorrect) {
-                                eprintln!("POTENTIAL MISSING ACCENT: Found '{}', should be '{}'", 
+                                eprintln!("POTENTIAL MISSING ACCENT: Found '{}', should be '{}'",
                                         incorrect, correct);
                             }
                         }
                     }
-                    
+
                     // Debug the raw bytes received, but only in verbose mode
                     if verbose {
                         eprintln!("RAW INPUT DEBUG: Received {} bytes", bytes_read);
                         eprintln!("TEXT RECEIVED: {}", line.trim());
                         eprintln!("ENCODING CHECK: UTF-8 valid: {}", String::from_utf8(line.clone().into_bytes()).is_ok());
                     }
-                    
+
                     // Detailed debugging for problematic Spanish words, only in debug_accents mode
                     if debug_accents && session_language.starts_with("es") {
                         // Check common problem characters with detailed byte analysis
@@ -1446,19 +1504,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             eprintln!("Line: {}", line);
                             eprintln!("HEX: {}", line.bytes().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" "));
                         }
-                        
+
                         if line.contains("Aqu") || line.contains("aqu") {
                             eprintln!("ENCODING DEBUG: Found 'Aqu/aqu' - might be missing 'í'");
                             eprintln!("Line: {}", line);
                             eprintln!("HEX: {}", line.bytes().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" "));
                         }
-                        
+
                         if line.contains("comunicacin") || line.contains("comunicacion") {
                             eprintln!("ENCODING DEBUG: Found 'comunicacion' - might be missing 'ó'");
                             eprintln!("Line: {}", line);
                             eprintln!("HEX: {}", line.bytes().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" "));
                         }
-                        
+
                         // Check specifically for Spanish characters that should have accents
                         let spanish_words = [
                             ("poltica", "política"),
@@ -1469,17 +1527,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ("informacion", "información"),
                             ("educacion", "educación")
                         ];
-                        
+
                         for (incorrect, correct) in spanish_words.iter() {
                             if line.contains(incorrect) {
                                 eprintln!("ACCENT MISSING: Found '{}', should be '{}'", incorrect, correct);
                             }
                         }
                     }
-                    
+
                     // Add to our text buffer
                     buffer.push_str(&line);
-                    
+
                     // Only run language detection if we haven't detected yet and auto-detect is enabled
                     if !language_detected {
                         if auto_detect && buffer.len() > 60 {
@@ -1487,7 +1545,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if verbose {
                                 eprintln!("Auto-detecting language from initial text...");
                             }
-                            
+
                             if let Some(detected) = kokorox::tts::phonemizer::detect_language(&buffer) {
                                 eprintln!("Detected language: {}", detected);
                                 session_language = detected;
@@ -1498,7 +1556,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // With auto_detect disabled, just use the specified language
                             eprintln!("Using specified language: {}", lan);
                         }
-                        
+
                         // Handle voice style selection based on force_style flag
                         if force_style {
                             // When forcing style, just use the user-specified style (from CLI args)
@@ -1512,24 +1570,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             eprintln!("Selected language-appropriate voice style: {}", default_style);
                             session_style = default_style;
                         }
-                        
+
                         language_detected = true;
                         // Always show the final language/voice selection as this is important information
                         eprintln!("Will use language: {} with voice: {}", session_language, session_style);
                     }
-                    
+
                     // Extract and process complete sentences
                     let mut complete_sentences = Vec::new();
-                    
+
                     // Process sentences based on language type
-                    if session_language.starts_with("zh") || 
-                       session_language.starts_with("ja") || 
-                       session_language.starts_with("ko") 
+                    if session_language.starts_with("zh") ||
+                       session_language.starts_with("ja") ||
+                       session_language.starts_with("ko")
                     {
                         // For CJK languages, extract based on special punctuation
                         let mut cjk_sentences = Vec::new();
                         let mut current = String::new();
-                        
+
                         for c in buffer.chars() {
                             current.push(c);
                             if (c == '。' || c == '！' || c == '？' || c == '.' || c == '!' || c == '?') && !current.trim().is_empty() {
@@ -1537,10 +1595,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 current.clear();
                             }
                         }
-                        
+
                         // Update complete_sentences with the extracted CJK sentences
                         complete_sentences = cjk_sentences;
-                        
+
                         // Keep the incomplete sentence in the buffer
                         if !current.trim().is_empty() {
                             buffer = current;
@@ -1550,9 +1608,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         // Check the buffer for accented characters before segmentation, but only if debug is enabled
                         if verbose && session_language.starts_with("es") {
-                            let has_accents = buffer.contains('á') || buffer.contains('é') || 
-                                             buffer.contains('í') || buffer.contains('ó') || 
-                                             buffer.contains('ú') || buffer.contains('ñ') || 
+                            let has_accents = buffer.contains('á') || buffer.contains('é') ||
+                                             buffer.contains('í') || buffer.contains('ó') ||
+                                             buffer.contains('ú') || buffer.contains('ñ') ||
                                              buffer.contains('ü');
                             if has_accents {
                                 println!("BUFFER PRE-SEGMENTATION: Spanish text with accents detected");
@@ -1561,21 +1619,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                        
+
                         // Apply preprocessing to handle problematic patterns like "1939 to" before segmentation
                         // This is needed even though we have the improved segmentation to ensure the model handles the text properly
                         if verbose {
                             println!("APPLYING PREPROCESSING to handle problematic patterns in: {}", buffer);
-                            
+
                             // Debug special characters
                             for (i, c) in buffer.chars().enumerate() {
                                 if c == '\'' {
-                                    println!("FOUND APOSTROPHE: at position {}: '{}' (Unicode: U+{:04X})", 
+                                    println!("FOUND APOSTROPHE: at position {}: '{}' (Unicode: U+{:04X})",
                                              i, c, c as u32);
                                 }
                             }
                         }
-                        
+
                         // In phonemes mode, skip all text preprocessing to preserve IPA symbols
                         let pre_processed = if phonemes {
                             if verbose {
@@ -1589,7 +1647,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     .replace("1941to", "1941 to")
                                                     .replace("1942to", "1942 to")
                                                     .replace("1945to", "1945 to");
-                            
+
                             // Very important: Don't let the sentence_segmentation library process the text
                             // directly, as it causes issues with apostrophes. Let's pre-process it ourselves.
                             if buffer_fixed.contains('\'') {
@@ -1602,7 +1660,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 buffer_fixed
                             }
                         };
-                                                
+
                         // Use our UTF-8 safe sentence segmentation function with proper language handling
                         // In phonemes mode, skip segmentation to preserve IPA symbols
                         let mut sentences = if phonemes {
@@ -1611,62 +1669,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             utf8_safe_sentence_segmentation(&pre_processed, &session_language, verbose, debug_accents)
                         };
-                        
+
                         // Restore any apostrophes that were temporarily replaced (skip in phonemes mode)
                         if !phonemes && pre_processed.contains("__APOSTROPHE__") {
                             if verbose {
                                 println!("RESTORING APOSTROPHES: Replacing placeholders with actual apostrophes");
                             }
-                            for i in 0..sentences.len() {
-                                sentences[i] = sentences[i].replace("__APOSTROPHE__", "'");
+                            for sentence in &mut sentences {
+                                *sentence = sentence.replace("__APOSTROPHE__", "'");
                             }
                         }
-                        
+
                         if verbose {
                             println!("SEGMENTATION COMPLETE: Found {} potential sentences", sentences.len());
                         }
-                        
+
                         // Handle buffer updates with UTF-8 safety
                         if !sentences.is_empty() {
                             // Check if the last sentence appears incomplete (no ending punctuation)
                             let last_sentence = sentences.last().unwrap();
-                            
+
                             if verbose {
                                 println!("Last segment: {}", last_sentence);
                             }
-                            
-                            if !(last_sentence.ends_with('.') || 
-                                 last_sentence.ends_with('!') || 
+
+                            if !(last_sentence.ends_with('.') ||
+                                 last_sentence.ends_with('!') ||
                                  last_sentence.ends_with('?')) {
-                                
+
                                 if verbose {
                                     println!("Last segment appears incomplete - will keep in buffer");
                                 }
-                                
+
                                 // Handle buffer update with careful UTF-8 byte handling
                                 if sentences.len() > 1 {
                                     // Everything except the last sentence
                                     let complete_text: String = sentences[..sentences.len()-1]
                                         .iter()
                                         .fold(String::new(), |acc, s| acc + s + " ");
-                                    
+
                                     // Try to find where the complete sentences end in the buffer
                                     if buffer.starts_with(&complete_text) {
                                         // Safe to remove the processed text and keep remainder
                                         buffer = buffer[complete_text.len()..].to_string();
                                         if verbose {
-                                            println!("BUFFER UPDATE: Remaining text in buffer: '{}'", 
+                                            println!("BUFFER UPDATE: Remaining text in buffer: '{}'",
                                                     buffer.chars().take(30).collect::<String>());
                                         }
                                     } else {
                                         // Fallback: just keep the last incomplete sentence
                                         buffer = last_sentence.to_string();
                                         if verbose {
-                                            println!("BUFFER FALLBACK: Keeping last segment: '{}'", 
+                                            println!("BUFFER FALLBACK: Keeping last segment: '{}'",
                                                     last_sentence.chars().take(30).collect::<String>());
                                         }
                                     }
-                                    
+
                                     // Only use complete sentences for processing
                                     complete_sentences = sentences[..sentences.len()-1].to_vec();
                                 } else {
@@ -1683,13 +1741,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 complete_sentences = sentences;
                                 buffer.clear();
                             }
-                            
+
                             // Check for accent preservation in Spanish text, but only in debug mode
                             if debug_accents && session_language.starts_with("es") {
                                 for (i, sentence) in complete_sentences.iter().enumerate() {
-                                    let has_accents = sentence.contains('á') || sentence.contains('é') || 
-                                                     sentence.contains('í') || sentence.contains('ó') || 
-                                                     sentence.contains('ú') || sentence.contains('ñ') || 
+                                    let has_accents = sentence.contains('á') || sentence.contains('é') ||
+                                                     sentence.contains('í') || sentence.contains('ó') ||
+                                                     sentence.contains('ú') || sentence.contains('ñ') ||
                                                      sentence.contains('ü');
                                     if has_accents {
                                         println!("SEGMENT {} RETAINS ACCENTS: {}", i, sentence);
@@ -1700,7 +1758,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     };
-                    
+
                     // Handle special case: no complete sentences but substantial text
                     // In phonemes mode, don't split the buffer - process everything as one chunk
                     if !phonemes && complete_sentences.is_empty() && buffer.len() > 200 {
@@ -1723,23 +1781,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         complete_sentences.push(segment.clone());
                         buffer = buffer[end_index..].to_string();
                     }
-                    
+
                     // Process complete sentences immediately
                     for (i, sentence) in complete_sentences.iter().enumerate() {
                         let sentence = sentence.trim();
                         if sentence.is_empty() {
                             continue;
                         }
-                        
+
                         // Add proper punctuation if needed
-                        let mut text_to_process = if !(sentence.ends_with('.') || 
-                                                sentence.ends_with('!') || 
+                        let mut text_to_process = if !(sentence.ends_with('.') ||
+                                                sentence.ends_with('!') ||
                                                 sentence.ends_with('?')) {
                             format!("{}.", sentence)
                         } else {
-                            sentence.to_string() 
+                            sentence.to_string()
                         };
-                        
+
                         // Fix problematic patterns that might appear even after segmentation
                         // This handles cases like "1939 to It officially" - a clear segmentation error
                         // that our preprocessor tries to catch but might still appear
@@ -1749,15 +1807,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 println!("FIXING SEGMENTATION ERROR: Found 'to It' pattern, which is likely a bad sentence break");
                                 println!("Before: {}", text_to_process);
                             }
-                            
+
                             // Fix by making "to" lowercase
                             text_to_process = text_to_process.replace(" to It ", " to it ");
-                            
+
                             if verbose {
                                 println!("After: {}", text_to_process);
                             }
                         }
-                        
+
                         // Handle other common segmentation errors with year ranges
                         for year in ["1939", "1940", "1941", "1942", "1945"] {
                             let error_pattern = format!("{} to It", year);
@@ -1765,26 +1823,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if verbose {
                                     println!("FIXING YEAR SEGMENTATION ERROR: Found '{}' pattern", error_pattern);
                                 }
-                                
+
                                 // Replace with lowercase 'it' to prevent sentence break
                                 let fixed_pattern = format!("{} to it", year);
                                 text_to_process = text_to_process.replace(&error_pattern, &fixed_pattern);
                             }
                         }
-                        
+
                         // Always check for UTF-8 validity before processing
                         if String::from_utf8(text_to_process.clone().into_bytes()).is_err() {
                             eprintln!("WARNING: Invalid UTF-8 detected in segment {}. Attempting to fix...", i);
                             // Use lossy conversion to replace invalid sequences
                             text_to_process = String::from_utf8_lossy(text_to_process.as_bytes()).to_string();
                         }
-                        
+
                         // Check if there are accented characters already
-                        let has_accents = text_to_process.contains('á') || text_to_process.contains('é') || 
-                                         text_to_process.contains('í') || text_to_process.contains('ó') || 
-                                         text_to_process.contains('ú') || text_to_process.contains('ñ') || 
+                        let has_accents = text_to_process.contains('á') || text_to_process.contains('é') ||
+                                         text_to_process.contains('í') || text_to_process.contains('ó') ||
+                                         text_to_process.contains('ú') || text_to_process.contains('ñ') ||
                                          text_to_process.contains('ü');
-                        
+
                         // For Spanish text, always try to restore accents
                         if session_language.starts_with("es") {
                             // Log pre-restoration state
@@ -1793,16 +1851,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 eprintln!("SEGMENT {} NO ACCENTS: No accented characters found, will attempt restoration", i);
                             }
-                            
+
                             // Use kokorox restore_spanish_accents to fix lost accents
                             let restored = kokorox::tts::koko::restore_spanish_accents(&text_to_process);
-                            
+
                             // Compare before and after restoration
                             if restored != text_to_process {
                                 eprintln!("ACCENT RESTORATION: Fixed accents in segment {}", i);
                                 eprintln!("  Before: {}", text_to_process);
                                 eprintln!("  After: {}", restored);
-                                
+
                                 // Use the restored text
                                 text_to_process = restored;
                             } else if !has_accents {
@@ -1810,23 +1868,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("  Text: {}", text_to_process);
                             }
                         }
-                        
-                        eprintln!("Processing segment {}: {}", i+1, 
+
+                        eprintln!("Processing segment {}: {}", i+1,
                             if text_to_process.chars().count() > 50 {
                                 let truncated: String = text_to_process.chars().take(50).collect();
                                 format!("{}...", truncated)
                             } else {
-                                text_to_process.clone() 
+                                text_to_process.clone()
                             });
-                        
+
                         // Debug log for Spanish special characters
                         if session_language.starts_with("es") {
-                            let contains_special = text_to_process.contains('ñ') || 
-                                                  text_to_process.contains('á') || 
-                                                  text_to_process.contains('é') || 
-                                                  text_to_process.contains('í') || 
-                                                  text_to_process.contains('ó') || 
-                                                  text_to_process.contains('ú') || 
+                            let contains_special = text_to_process.contains('ñ') ||
+                                                  text_to_process.contains('á') ||
+                                                  text_to_process.contains('é') ||
+                                                  text_to_process.contains('í') ||
+                                                  text_to_process.contains('ó') ||
+                                                  text_to_process.contains('ú') ||
                                                   text_to_process.contains('ü');
                             if contains_special {
                                 eprintln!("DEBUG SPANISH CHARS: Found special characters in text");
@@ -1838,17 +1896,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("Raw text with special chars: {}", text_to_process);
                             }
                         }
-                        
+
                         // Apply preprocessing to handle problematic patterns like year ranges
                         let preprocessed_text = preprocess_text_for_segmentation(&text_to_process, verbose);
                         let final_preprocessed = preprocessed_text.replace("→", " ");
-                        
+
                         if verbose && final_preprocessed != text_to_process {
                             eprintln!("PREPROCESSING: Text was preprocessed for better TTS handling");
                             eprintln!("Original: {}", text_to_process);
                             eprintln!("Preprocessed: {}", final_preprocessed);
                         }
-                        
+
                         // Generate audio with consistent language/voice
                         match tts.tts_raw_audio(
                             &final_preprocessed,
@@ -1863,11 +1921,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Ok(audio) => {
                                 // Stream this chunk immediately
                                 tx.send(audio.clone())?;
-                                
+
                                 // Also write to WAV file
                                 write_audio_chunk(&mut wav_file, &audio)?;
                                 wav_file.flush()?;
-                                
+
                                 eprintln!("Streaming audio for this segment...");
                             },
                             Err(e) => {
@@ -1877,38 +1935,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                
+
                 // Process any remaining text at EOF
                 if !buffer.trim().is_empty() {
                     eprintln!("Processing final text: {}", buffer.trim());
-                    
+
                     // In phonemes mode, don't add punctuation - use text as-is
                     let mut final_text = if phonemes {
                         buffer.trim().to_string()
                     } else {
                         // Add period if needed for regular text mode
-                        if !(buffer.trim().ends_with('.') || 
-                            buffer.trim().ends_with('!') || 
+                        if !(buffer.trim().ends_with('.') ||
+                            buffer.trim().ends_with('!') ||
                             buffer.trim().ends_with('?')) {
                             format!("{}.", buffer.trim())
                         } else {
-                            buffer.trim().to_string() 
+                            buffer.trim().to_string()
                         }
                     };
-                    
+
                     // Always check for UTF-8 validity before processing
                     if String::from_utf8(final_text.clone().into_bytes()).is_err() {
                         eprintln!("WARNING: Invalid UTF-8 detected in final text. Attempting to fix...");
                         // Use lossy conversion to replace invalid sequences
                         final_text = String::from_utf8_lossy(final_text.as_bytes()).to_string();
                     }
-                    
+
                     // Check if there are already accented characters
-                    let has_accents = final_text.contains('á') || final_text.contains('é') || 
-                                     final_text.contains('í') || final_text.contains('ó') || 
-                                     final_text.contains('ú') || final_text.contains('ñ') || 
+                    let has_accents = final_text.contains('á') || final_text.contains('é') ||
+                                     final_text.contains('í') || final_text.contains('ó') ||
+                                     final_text.contains('ú') || final_text.contains('ñ') ||
                                      final_text.contains('ü');
-                    
+
                     // For Spanish text, always try to restore accents (skip in phonemes mode)
                     if !phonemes && session_language.starts_with("es") {
                         // Log pre-restoration state
@@ -1917,23 +1975,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             eprintln!("FINAL TEXT NO ACCENTS: No accented characters found, will attempt restoration");
                         }
-                        
+
                         // Use our UTF-8 safe accent restoration
                         let restored = kokorox::tts::koko::restore_spanish_accents(&final_text);
-                        
+
                         // Compare before and after restoration
                         if restored != final_text {
                             eprintln!("ACCENT RESTORATION: Fixed accents in final text");
                             eprintln!("  Before: {}", final_text);
                             eprintln!("  After: {}", restored);
-                            
+
                             // Use the restored text
                             final_text = restored;
                         } else if !has_accents {
                             eprintln!("WARNING: Final text still has no accents after restoration attempt");
                             eprintln!("  Text: {}", final_text);
                         }
-                        
+
                         // Show each accented character for debugging
                         for (i, c) in final_text.char_indices() {
                             if !c.is_ascii() {
@@ -1941,7 +1999,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     };
-                    
+
                     // Apply preprocessing to handle problematic patterns like year ranges
                     let final_preprocessed = if phonemes {
                         if verbose {
@@ -1951,7 +2009,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         let preprocessed_text = preprocess_text_for_segmentation(&final_text, verbose);
                         let processed = preprocessed_text.replace("→", " ");
-                        
+
                         if verbose && processed != final_text {
                             eprintln!("PREPROCESSING FINAL TEXT: Text was preprocessed for better TTS handling");
                             eprintln!("Original: {}", final_text);
@@ -1959,7 +2017,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         processed
                     };
-                    
+
                     // Generate audio with consistent settings
                     match tts.tts_raw_audio(
                         &final_preprocessed,
@@ -1974,11 +2032,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(audio) => {
                             // Stream final chunk
                             tx.send(audio.clone())?;
-                            
+
                             // Write to WAV file
                             write_audio_chunk(&mut wav_file, &audio)?;
                             wav_file.flush()?;
-                            
+
                             eprintln!("Streaming final audio segment...");
                         },
                         Err(e) => {
@@ -1986,7 +2044,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                
+
                 // Drop the sender to close the channel
                 drop(tx);                         // close channel so Sink drains
                 if let Some(sink) = maybe_sink {  // wait only when audio was playing
@@ -1994,21 +2052,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("All text processed. Waiting for audio playback to complete...");
                     sink.sleep_until_end();
                 }
-                
+
             }
         }
 
         // Final cleanup before exiting
         println!("Performing final cleanup...");
-        
+
         // Explicit cleanup to manage ONNX Runtime resources
         tts.cleanup();
-        
+
         // Sleep to allow background threads to finish
         std::thread::sleep(std::time::Duration::from_millis(50));
-        
+
         println!("Cleanup complete, exiting normally");
-        
+
         // Let the program exit normally instead of forcing termination
         Ok(())
     })

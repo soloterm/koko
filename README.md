@@ -1,148 +1,88 @@
-# kokorox - fast Kokoro TTS in Rust
+# koko
 
-Rust implementation of the [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) text-to-speech model. Small model (87M parameters), high quality output, very fast inference.
+`soloterm/koko` is the Solo-maintained fork of [`WismutHansen/kokorox`](https://github.com/WismutHansen/kokorox), itself based on [`lucasjinreal/Kokoros`](https://github.com/lucasjinreal/Kokoros).
 
-## Features
+This repository is the source of truth for `koko` binaries distributed to Solo users. Solo builds, signs, and publishes all binaries from this repo.
 
-- Multi-language: English, Chinese, Japanese, Spanish, French, and more via espeak-ng
-- Voice style mixing (e.g., `af_sky.4+af_nicole.5`)
-- OpenAI-compatible API server
-- Streaming and pipe modes for LLM integration
-- Automatic language detection
+## Credits
 
-## Quick Start
+- Original Kokoro/Kokoros work by Lucas Jin and contributors
+- Rust fork and major extensions by the kokorox maintainers
+- Ongoing distribution/maintenance in this fork by Solo Terminal, Inc.
 
-```bash
-# Install (macOS)
-brew install byteowlz/tap/koko
+## License
 
-# Or download from GitHub Releases
-# https://github.com/byteowlz/kokorox/releases
+This fork is licensed under the GNU General Public License v3.0 (`GPL-3.0-only`). See `LICENSE`.
 
-# Generate speech
-koko text "Hello, this is a test"
+For third-party attribution details, see `NOTICE` and tracked local modifications in `CHANGES.md`.
 
-# Output: tmp/output.wav
-```
+## Build From Source
 
-## Installation
+Prerequisites:
 
-### Pre-built Binaries
+- Rust stable toolchain
+- `espeak-ng` development libraries
+- `pkg-config`
 
-Download from [GitHub Releases](https://github.com/byteowlz/kokorox/releases) for Linux, macOS, and Windows.
-
-### From Source
-
-Requires ONNX runtime and espeak-ng:
+Examples:
 
 ```bash
 # macOS
-brew install espeak-ng
+brew install espeak-ng pkg-config
 
 # Ubuntu/Debian
-sudo apt-get install espeak-ng libespeak-ng-dev
+sudo apt-get update
+sudo apt-get install -y espeak-ng libespeak-ng-dev pkg-config
 ```
 
 Build:
 
 ```bash
-git clone https://github.com/byteowlz/kokorox.git
-cd kokorox
-pip install -r scripts/requirements.txt
-python scripts/download_voices.py --all
 cargo build --release
 ```
 
-### ONNX Runtime (Linux with NVIDIA GPU)
+## Basic Usage
 
 ```bash
-tar -xzf onnxruntime-linux-x64-gpu-1.22.0.tgz
-sudo cp -a onnxruntime-linux-x64-gpu-1.22.0/include /usr/local/
-sudo cp -a onnxruntime-linux-x64-gpu-1.22.0/lib /usr/local/
-sudo ldconfig
-export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+# Generate speech from text
+./target/release/koko text "Hello world" -o test.wav
+
+# List voices as JSON
+./target/release/koko voices --format json
+
+# Stream from stdin
+printf "Hello from stdin\n" | ./target/release/koko stream > output.wav
+
+# Pipe mode
+printf "Hello from pipe mode\n" | ./target/release/koko pipe -o pipe.wav
 ```
 
-## Usage
+## Release Artifacts
 
-### Basic
+Release workflows produce per-platform archives containing:
+
+- `koko` / `koko.exe`
+- `LICENSE`
+- `NOTICE`
+
+Checksums are published alongside artifacts in GitHub Releases.
+
+## Upstream Maintenance
+
+Use manual upstream review; do not auto-merge upstream into `main`.
 
 ```bash
-koko text "Hello, world!" -o greeting.wav
-koko file poem.txt                          # One wav per line
+# Review upstream drift
+just upstream-check
+
+# Create a dated sync branch from main
+just upstream-sync-branch
+
+# If your shipping remote is not 'origin'
+SHIP_REMOTE=soloterm just upstream-sync-branch
+
+# Cherry-pick reviewed commits onto upstream-sync/*
+just upstream-pick <sha> [<sha> ...]
 ```
 
-### Multi-language
-
-```bash
-koko text "Hola, mundo!" --lan es
-koko text "你好，世界!" --lan zh
-koko -a text "Bonjour!"                     # Auto-detect language
-```
-
-### Voice Styles
-
-```bash
-koko voices                                 # List available voices
-koko voices --language en --gender female   # Filter voices
-koko text "Hello" --style af_sky
-koko text "Hello" --style af_sky.4+af_nicole.5  # Mix styles
-```
-
-### Pipe Mode (LLM Integration)
-
-```bash
-ollama run llama3 "Tell me a story" | koko pipe
-ollama run llama3 "Explain physics" | koko pipe --silent -o output.wav
-```
-
-### OpenAI-Compatible Server
-
-```bash
-koko openai --ip 0.0.0.0 --port 3000
-```
-
-```bash
-curl -X POST http://localhost:3000/v1/audio/speech \
-  -H "Content-Type: application/json" \
-  -d '{"model": "kokoro", "input": "Hello!", "voice": "af_sky"}' \
-  -o hello.wav
-
-curl http://localhost:3000/v1/audio/voices           # List voice IDs
-curl http://localhost:3000/v1/audio/voices/detailed  # Voice metadata
-```
-
-### Streaming
-
-```bash
-koko stream > output.wav
-# Type text, press Enter. Ctrl+D to exit.
-```
-
-### Docker
-
-```bash
-docker build -t kokorox .
-docker run -v ./tmp:/app/tmp kokorox text "Hello from docker!" -o tmp/hello.wav
-docker run -p 3000:3000 kokorox openai --ip 0.0.0.0 --port 3000
-```
-
-## Debugging
-
-```bash
-koko text "Text here" --verbose              # Detailed processing logs
-koko text "Accénted" --debug-accents         # Character-by-character analysis
-```
-
-## Additional Voices
-
-The default installation includes standard voices. More voices (54 total across 8 languages) can be converted from Hugging Face:
-
-```bash
-python scripts/convert_pt_voices.py --all
-koko -d data/voices-custom.bin text "Hello" --style en_sarah
-```
-
-## License
-
-GPL 3.0 due to use of the espeak-rs-sys crate which statically links espeak-ng
+The `Upstream Report` GitHub workflow runs monthly (and on manual dispatch) to report upstream commit drift and update a tracking issue. It does not modify code.

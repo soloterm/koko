@@ -1,9 +1,15 @@
 soloterm/koko
 Copyright 2025 Solo Terminal, Inc.
 
+This fork is distributed under the GNU General Public License v3.0
+(`GPL-3.0-only`). See LICENSE for full terms.
+
 This product is based on kokorox (https://github.com/WismutHansen/kokorox)
 which is based on Kokoros (https://github.com/lucasjinreal/Kokoros)
-by Lucas Jin, licensed under the Apache License 2.0.
+by Lucas Jin.
 
 This product includes the Kokoro-82M model (https://huggingface.co/hexgrad/Kokoro-82M)
 licensed under the Apache License 2.0.
+
+Third-party component licenses listed here do not change the license of this fork itself,
+which remains GPL-3.0-only.

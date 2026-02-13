@@ -2,10 +2,11 @@
 name = "kokorox-websocket"
 version = "0.2.1"
 edition = "2021"
-homepage = "https://github.com/WismutHansen/kokorox"
-authors = ["Lucas Jin", "Tommy Falkowski"]
-description = "WebSocket server for Kokorox TTS"
-license = "Apache-2.0"
+repository = "https://github.com/soloterm/koko.git"
+homepage = "https://github.com/soloterm/koko"
+authors = ["Solo Terminal, Inc.", "Lucas Jin", "Tommy Falkowski"]
+description = "WebSocket server for the Solo-maintained Kokoro TTS fork"
+license = "GPL-3.0-only"
 
 [dependencies]
 kokorox = { path = "../kokorox" }

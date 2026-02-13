@@ -43,6 +43,43 @@ jobs:
           echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Using release tag: $TAG"
 
+  source:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package corresponding source
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ needs.prepare.outputs.release_tag }}"
+          ARCHIVE_ROOT="koko-source-${TAG}"
+          ARCHIVE_NAME="${ARCHIVE_ROOT}.tar.gz"
+
+          # Bundle tracked source and build-relevant files, excluding CI workflow config.
+          git archive --format=tar \
+            --prefix="${ARCHIVE_ROOT}/" \
+            HEAD \
+            -- \
+            . \
+            ':(exclude).github/**' \
+            | gzip -n > "${ARCHIVE_NAME}"
+
+          shasum -a 256 "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+
+          echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload source release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          files: |
+            ${{ steps.package.outputs.archive_name }}
+            ${{ steps.package.outputs.archive_name }}.sha256
+
   build:
     needs: prepare
     strategy:

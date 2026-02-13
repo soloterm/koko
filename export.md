@@ -1,5 +1,9 @@
 # Session: ort_base.rs compilation errors
 
+> Note: This is a historical exported transcript. It may contain snapshots of older upstream metadata.
+> The current license for `soloterm/koko` is `GPL-3.0-only`
+> as defined by the repository root `LICENSE` file.
+
 **Session ID:** `ses_410c81203ffes29cXXGC5kBTm8`  
 **Created:** 2026-01-24 08:56:18  
 **Duration:** 17.8m  
@@ -1263,7 +1267,7 @@ The latest stable version is `2.0.0-rc.11` (still RC). Let me check all Cargo.to
 00006| resolver = "2"
 00007| authors = ["Lucas Jin", "Tommy Falkowski"]
 00008| description = "Lightning fast text-to-speech with the Kokoro model in rust"
-00009| license = "Apache-2.0"
+00009| license = "GPL-3.0-only"
 00010| build = "build.rs"
 00011| 
 00012| [dependencies]
@@ -1654,7 +1658,7 @@ Let me fix the tokio feature issue and the type annotation error:
 00006| homepage = "https://github.com/WismutHansen/kokorox"
 00007| authors = ["Lucas Jin", "Tommy Falkowski"]
 00008| description = "Lightning fast text-to-speech CLI using the Kokoro model in rust"
-00009| license = "Apache-2.0"
+00009| license = "GPL-3.0-only"
 00010| 
 00011| [package.metadata.wix]
 00012| upgrade-guid = "336CE5A3-EB28-4A3A-A4C0-477194EBD0F6"
@@ -2178,7 +2182,7 @@ Still crashing. Exit code 132 is SIGILL (illegal instruction). The ONNX Runtime 
 00006| resolver = "2"
 00007| authors = ["Lucas Jin", "Tommy Falkowski"]
 00008| description = "Lightning fast text-to-speech with the Kokoro model in rust"
-00009| license = "Apache-2.0"
+00009| license = "GPL-3.0-only"
 00010| build = "build.rs"
 00011| 
 00012| [dependencies]
@@ -3141,4 +3145,3 @@ cp: cannot create directory '/home/wismut/CODE/kokorox/onnxruntime/pkgconfig': N
 ```
 
 ---
-

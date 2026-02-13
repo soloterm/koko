@@ -1,0 +1,152 @@
+name: Upstream Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 13 1 * *'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    outputs:
+      report: ${{ steps.build-report.outputs.report }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure upstream remotes
+        run: |
+          set -euo pipefail
+
+          if ! git remote | grep -qx 'kokorox'; then
+            git remote add kokorox https://github.com/WismutHansen/kokorox.git
+          fi
+
+          if ! git remote | grep -qx 'kokoros'; then
+            git remote add kokoros https://github.com/lucasjinreal/Kokoros.git
+          fi
+
+      - name: Fetch upstream branches
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --prune
+          git fetch kokorox main --prune
+          git fetch kokoros main --prune
+
+      - id: build-report
+        name: Build upstream report
+        run: |
+          set -euo pipefail
+
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          BASE_REF="origin/main"
+
+          KOKOROX_COUNT="$(git rev-list --count ${BASE_REF}..kokorox/main || echo 0)"
+          KOKOROS_COUNT="$(git rev-list --count ${BASE_REF}..kokoros/main || echo 0)"
+
+          {
+            echo "## Upstream Sync Report"
+            echo
+            echo "Generated: ${NOW}"
+            echo
+            echo "This is a reporting-only workflow. It does not merge, rebase, or change source code."
+            echo
+            echo "### Pending commits"
+            echo "- kokorox/main ahead of origin/main: ${KOKOROX_COUNT}"
+            echo "- kokoros/main ahead of origin/main: ${KOKOROS_COUNT}"
+            echo
+            echo "### kokorox commits not in main"
+            if [ "${KOKOROX_COUNT}" -gt 0 ]; then
+              git log --no-merges --oneline --date=short --pretty='- %h %s (%ad)' ${BASE_REF}..kokorox/main | head -n 25
+            else
+              echo "- No new commits."
+            fi
+            echo
+            echo "### kokoros commits not in main"
+            if [ "${KOKOROS_COUNT}" -gt 0 ]; then
+              git log --no-merges --oneline --date=short --pretty='- %h %s (%ad)' ${BASE_REF}..kokoros/main | head -n 25
+            else
+              echo "- No new commits."
+            fi
+            echo
+            echo "### Manual next step"
+            echo "Run 'just upstream-check' locally, create an upstream-sync branch, and cherry-pick reviewed commits only."
+          } > upstream-report.md
+
+          cat upstream-report.md >> "$GITHUB_STEP_SUMMARY"
+
+          echo "report<<EOF" >> "$GITHUB_OUTPUT"
+          cat upstream-report.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-report
+          path: upstream-report.md
+
+  sync-issue:
+    needs: report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or update upstream sync issue
+        uses: actions/github-script@v7
+        env:
+          REPORT_BODY: ${{ needs.report.outputs.report }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = 'Upstream Sync Report (Manual Review Required)';
+            const label = 'upstream-sync';
+            const body = process.env.REPORT_BODY;
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (err) {
+              if (err.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name: label,
+                  color: '1f6feb',
+                  description: 'Tracking manual upstream sync reviews',
+                });
+              } else {
+                throw err;
+              }
+            }
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              labels: label,
+              per_page: 100,
+            });
+
+            const existing = issues.find((issue) => issue.title === title);
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                title,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels: [label],
+              });
+            }

@@ -17,3 +17,6 @@ allow-branch = ["main"]
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[profile.release]
+strip = true

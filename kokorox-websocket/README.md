@@ -172,4 +172,6 @@ All audio chunks are:
 
 ## License
 
-Apache-2.0
+GPL-3.0-only
+
+See the repository root `LICENSE` file for full terms.
