@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
@@ -68,8 +69,63 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Using release tag: $TAG"
 
-  source:
+  gate-ci:
     needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful CI for release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          timeout_seconds=1800
+          poll_seconds=20
+          deadline=$(( $(date +%s) + timeout_seconds ))
+
+          echo "Waiting for CI success on commit: ${RELEASE_SHA}"
+
+          while true; do
+            run_json="$(gh api \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs?event=push&head_sha=${RELEASE_SHA}&per_page=100")"
+
+            ci_run="$(echo "$run_json" | jq -c '[.workflow_runs[] | select(.name == "CI")] | sort_by(.created_at) | reverse | .[0] // empty')"
+
+            if [ -n "$ci_run" ]; then
+              status="$(echo "$ci_run" | jq -r '.status')"
+              conclusion="$(echo "$ci_run" | jq -r '.conclusion // ""')"
+              html_url="$(echo "$ci_run" | jq -r '.html_url')"
+
+              echo "Found CI run: ${html_url}"
+              echo "Status: ${status}, Conclusion: ${conclusion}"
+
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  echo "CI gate passed."
+                  exit 0
+                fi
+
+                echo "CI gate failed: CI completed with conclusion '${conclusion}'."
+                exit 1
+              fi
+            else
+              echo "No CI run found yet for commit ${RELEASE_SHA}."
+            fi
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "Timed out waiting for CI success on ${RELEASE_SHA}."
+              exit 1
+            fi
+
+            sleep "$poll_seconds"
+          done
+
+  source:
+    needs:
+      - prepare
+      - gate-ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +208,9 @@ jobs:
             ${{ steps.package.outputs.archive_name }}.sha256
 
   build:
-    needs: prepare
+    needs:
+      - prepare
+      - gate-ci
     strategy:
       fail-fast: false
       matrix:
