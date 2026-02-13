@@ -17,9 +17,6 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             name: koko-aarch64-apple-darwin
-          - target: x86_64-apple-darwin
-            os: macos-15-intel
-            name: koko-x86_64-apple-darwin
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: koko-x86_64-unknown-linux-gnu
@@ -42,7 +39,7 @@ jobs:
 
       - name: Install deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libopus-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libopus-dev libasound2-dev
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
@@ -100,7 +97,11 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$NOTARY_PASSWORD" \
             --wait
-          xcrun stapler staple "$BINARY"
+
+          # "stapler" only supports app bundles, pkg, and dmg artifacts.
+          # For a standalone CLI executable, notarization acceptance + Gatekeeper
+          # assessment are the correct checks.
+          echo "Skipping stapler for standalone CLI binary: $BINARY"
           spctl --assess --type execute --verbose=4 "$BINARY"
 
       - name: Sign (Windows)
