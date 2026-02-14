@@ -4,7 +4,7 @@ use kokorox::{
     utils::wav::{write_audio_chunk, WavHeader},
 };
 use regex::Regex;
-use rodio::{OutputStream, Sink, Source};
+use rodio::{OutputStreamBuilder, Sink, Source};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::{
@@ -23,7 +23,7 @@ use config::AppConfig;
 
 struct ChannelSource {
     rx: Receiver<Vec<f32>>,
-    current: std::vec::IntoIter<i16>,
+    current: std::vec::IntoIter<f32>,
     sample_rate: u32,
 }
 
@@ -38,7 +38,7 @@ impl ChannelSource {
 }
 
 impl Iterator for ChannelSource {
-    type Item = i16;
+    type Item = f32;
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(sample) = self.current.next() {
             Some(sample)
@@ -46,9 +46,7 @@ impl Iterator for ChannelSource {
             // Block until a new chunk arrives (or channel is closed)
             match self.rx.recv() {
                 Ok(chunk) => {
-                    // Convert each f32 sample to i16 (scaling appropriately)
-                    let samples: Vec<i16> = chunk.iter().map(|&s| (s * 32767.0) as i16).collect();
-                    self.current = samples.into_iter();
+                    self.current = chunk.into_iter();
                     self.current.next()
                 }
                 Err(_) => None, // Channel closed.
@@ -58,7 +56,7 @@ impl Iterator for ChannelSource {
 }
 
 impl Source for ChannelSource {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         None // Unknown.
     }
     fn channels(&self) -> u16 {
@@ -1366,8 +1364,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (_stream, maybe_sink) = if silent {
                     (None, None)
                 } else {
-                    let (stream, handle) = OutputStream::try_default()?;
-                    let sink = Sink::try_new(&handle)?;
+                    let stream = OutputStreamBuilder::open_default_stream()?;
+                    let sink = Sink::connect_new(stream.mixer());
                     let source = ChannelSource::new(rx, tts.sample_rate());
                     sink.append(source);
                     (Some(stream), Some(sink))
