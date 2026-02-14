@@ -234,6 +234,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ runner.os }}-${{ matrix.target }}-v1
+
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
         run: brew install pkg-config opus
