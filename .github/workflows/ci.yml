@@ -61,7 +61,7 @@ jobs:
       - name: Clippy
         run: cargo clippy -p koko --all-targets --no-deps -- -D warnings
 
-  test:
+  test-posix:
     needs: lint
     strategy:
       fail-fast: false
@@ -71,10 +71,6 @@ jobs:
             mode: test
           - os: macos-latest
             mode: check
-          - os: windows-latest
-            mode: check
-            push_only: true
-    if: ${{ github.event_name == 'push' || matrix.push_only != true }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -97,8 +93,24 @@ jobs:
         if: matrix.mode == 'test'
         run: cargo test -p koko --locked
 
-      - name: Compile check (macOS/Windows)
+      - name: Compile check (macOS)
         if: matrix.mode == 'check'
+        run: cargo check -p koko --locked
+
+  test-windows:
+    if: github.event_name == 'push'
+    needs: lint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: ci-${{ runner.os }}-v1
+
+      - name: Compile check (Windows)
         run: cargo check -p koko --locked
 
   audit:
