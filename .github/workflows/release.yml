@@ -362,7 +362,7 @@ jobs:
             ${{ matrix.name }}.*
 
       - name: Upload artifacts for manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-${{ matrix.target }}
           path: |
