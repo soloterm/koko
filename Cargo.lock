@@ -2017,7 +2017,7 @@ dependencies = [
  "jpreprocess",
  "lazy_static",
  "mp3lame-encoder",
- "ndarray 0.16.1",
+ "ndarray 0.17.2",
  "ndarray-npy",
  "ort",
  "parking_lot",
