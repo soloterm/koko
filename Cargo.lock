@@ -1103,6 +1103,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ced92e76e966ca2fd84c8f7aa01a4aea65b0eb6648d72f7c8f3e2764a67fece"
 dependencies = [
  "crc32fast",
+ "libz-rs-sys",
  "miniz_oxide",
 ]
 
@@ -2024,7 +2025,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "whatlang",
- "zip",
+ "zip 7.0.0",
 ]
 
 [[package]]
@@ -2133,6 +2134,15 @@ dependencies = [
  "bitflags 2.9.1",
  "libc",
  "redox_syscall",
+]
+
+[[package]]
+name = "libz-rs-sys"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c10501e7805cee23da17c7790e59df2870c0d4043ec6d03f67d31e2b53e77415"
+dependencies = [
+ "zlib-rs",
 ]
 
 [[package]]
@@ -2366,7 +2376,7 @@ dependencies = [
  "num-complex",
  "num-traits",
  "py_literal",
- "zip",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -4904,6 +4914,26 @@ dependencies = [
  "thiserror 2.0.12",
  "zopfli",
 ]
+
+[[package]]
+name = "zip"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdd8a47718a4ee5fe78e07667cd36f3de80e7c2bfe727c7074245ffc7303c037"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "zopfli",
+]
+
+[[package]]
+name = "zlib-rs"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zmij"
