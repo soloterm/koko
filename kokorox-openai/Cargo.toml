@@ -11,6 +11,6 @@ license = "GPL-3.0-only"
 [dependencies]
 kokorox = { path = "../kokorox" }
 
-axum = { version = "0.7", features = ["http2"] }
+axum = { version = "0.8", features = ["http2"] }
 serde = { version = "1.0", features = ["derive"] }
 tower-http = { version = "0.6", features = ["cors"] }
