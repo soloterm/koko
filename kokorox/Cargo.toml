@@ -27,7 +27,7 @@ jpreprocess = { version = "0.12.0", features = ["naist-jdic"] }
 
 # Chinese G2P dependencies
 jieba-rs = "0.8"
-pinyin = "0.10"
+pinyin = "0.11"
 chinese-number = "0.7"
 
 mp3lame-encoder = "0.2.1"
