@@ -24,7 +24,7 @@ tokio = { version = "1.49", features = ["io-util", "io-std", "rt-multi-thread"] 
 sentence_segmentation = "1.2.0"
 rodio = "0.21.1"
 ctrlc = "3.4.1"
-regex = "1.10.3"
+regex = "1.12.3"
 config = "0.14"
 serde = { version = "1.0", features = ["derive"] }
 dirs = "6.0"
