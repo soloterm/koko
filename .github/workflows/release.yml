@@ -200,7 +200,7 @@ jobs:
           echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload source release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: |
@@ -360,7 +360,7 @@ jobs:
           shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.sha256
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: |
@@ -497,7 +497,7 @@ jobs:
           mv manifest.sorted.json manifest.json
 
       - name: Upload manifest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: manifest.json
