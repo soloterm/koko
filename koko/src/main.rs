@@ -19,6 +19,7 @@ use std::{
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 mod config;
+mod espeak_data;
 use config::AppConfig;
 
 struct ChannelSource {
@@ -214,7 +215,7 @@ struct Cli {
     force_style: Option<bool>,
 
     /// Path to the Kokoro v1.0 ONNX model on the filesystem (optional, defaults to HF cache)
-    #[arg(short = 'm', long = "model", value_name = "MODEL_PATH")]
+    #[arg(short = 'm', long = "model", value_name = "MODEL_PATH", global = true)]
     model_path: Option<String>,
 
     /// Path to the voices data file on the filesystem (optional, defaults to HF cache)
@@ -222,7 +223,8 @@ struct Cli {
         short = 'd',
         long = "data",
         visible_alias = "voices",
-        value_name = "DATA_PATH"
+        value_name = "DATA_PATH",
+        global = true
     )]
     data_path: Option<String>,
 
@@ -978,40 +980,15 @@ fn style_exists(style: &str, available_voices: &[String]) -> bool {
     })
 }
 
-/// Initialize espeak-ng data directory environment variable if not already set.
-/// This checks common system paths where espeak-ng-data may be installed on Linux.
-#[cfg(target_os = "linux")]
-fn init_espeak_data_dir() {
-    const ENV_VAR: &str = "PIPER_ESPEAKNG_DATA_DIRECTORY";
-
-    // Skip if already set
-    if std::env::var(ENV_VAR).is_ok() {
-        return;
-    }
-
-    // Common Linux system paths where espeak-ng-data is installed
-    let system_paths = [
-        "/usr/share",       // Most distros (Arch, Debian, Ubuntu, Fedora, etc.)
-        "/usr/local/share", // Local installations
-    ];
-
-    for path in system_paths {
-        let data_dir = std::path::Path::new(path).join("espeak-ng-data");
-        if data_dir.exists() && data_dir.join("phontab").exists() {
-            std::env::set_var(ENV_VAR, path);
-            return;
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn init_espeak_data_dir() {
-    // No-op on non-Linux platforms
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize espeak-ng data directory before anything else
-    init_espeak_data_dir();
+    let cli = Cli::parse();
+    let espeak_result = match &cli.mode {
+        Mode::Config { .. } => Ok(()),
+        _ => espeak_data::init(),
+    };
+    if let Err(error) = espeak_result {
+        exit_with_error(ExitCode::RuntimeInitError, error);
+    }
 
     // The segmentation fault seems to be related to ONNX runtime cleanup
     // We'll use a different approach to clean up
@@ -1032,8 +1009,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
-        let cli = Cli::parse();
-
         // Handle config subcommand first (doesn't need TTS loaded)
         if let Mode::Config { paths, init } = &cli.mode {
             if *paths {
@@ -1270,9 +1245,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let addr = SocketAddr::from((server_ip, server_port));
                 println!("Starting OpenAI-compatible HTTP server on {addr}");
 
-                // Use TTSManager for dynamic model switching
-                let manager = TTSManager::with_variant(variant, model_type.clone()).await;
-                let app = kokorox_openai::create_server_with_manager(manager).await;
+                let app = if model_path.is_some() || data_path.is_some() {
+                    // Explicit files belong to this model; keep them for every API request.
+                    kokorox_openai::create_server(tts.clone()).await
+                } else {
+                    // Use TTSManager for dynamic model switching with cached models.
+                    let manager = TTSManager::with_variant(variant, model_type.clone()).await;
+                    kokorox_openai::create_server_with_manager(manager).await
+                };
                 let binding = tokio::net::TcpListener::bind(&addr).await?;
                 kokorox_openai::serve(binding, app.into_make_service()).await?;
 

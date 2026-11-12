@@ -68,14 +68,20 @@ impl OrtKoko {
         let speed = Tensor::from_array(([1], speed))?;
         let speed_value: SessionInputValue = SessionInputValue::Owned(Value::from(speed));
 
-        let inputs: Vec<(Cow<str>, SessionInputValue)> = vec![
-            (Cow::Borrowed("input_ids"), tokens_value),
-            (Cow::Borrowed("style"), style_value),
-            (Cow::Borrowed("speed"), speed_value),
-        ];
-
         if let Some(sess) = &self.sess {
             let mut sess = sess.lock();
+            let token_input = sess
+                .inputs()
+                .iter()
+                .find(|input| matches!(input.name(), "input_ids" | "tokens"))
+                .ok_or("Kokoro model has no input_ids or tokens input")?
+                .name()
+                .to_owned();
+            let inputs: Vec<(Cow<str>, SessionInputValue)> = vec![
+                (Cow::Owned(token_input), tokens_value),
+                (Cow::Borrowed("style"), style_value),
+                (Cow::Borrowed("speed"), speed_value),
+            ];
             let outputs: SessionOutputs = sess.run(SessionInputs::from(inputs))?;
             let (shape, data) = outputs[0]
                 .try_extract_tensor::<f32>()

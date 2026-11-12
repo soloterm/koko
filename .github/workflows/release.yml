@@ -337,6 +337,16 @@ jobs:
           cp LICENSE dist/
           if [ -f NOTICE ]; then cp NOTICE dist/; fi
 
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            shopt -s nullglob
+            data_dirs=(target/${{ matrix.target }}/release/build/espeak-rs-sys-*/out/build/espeak-ng-data)
+            if [ "${#data_dirs[@]}" -ne 1 ] || [ ! -f "${data_dirs[0]}/phontab" ]; then
+              echo "Expected one compiled espeak-rs-sys data directory with phontab; found ${#data_dirs[@]}."
+              exit 1
+            fi
+            cp -R "${data_dirs[0]}" dist/espeak-ng-data
+          fi
+
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
             7z a ../${{ matrix.name }}.zip *
@@ -424,6 +434,11 @@ jobs:
 
             if [ ! -f "$extract_dir/NOTICE" ]; then
               echo "Missing NOTICE inside archive."
+              exit 1
+            fi
+
+            if [ ! -f "$extract_dir/espeak-ng-data/phontab" ]; then
+              echo "Missing compiled espeak-ng-data/phontab inside archive."
               exit 1
             fi
 
