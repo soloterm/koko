@@ -349,12 +349,24 @@ jobs:
 
           if [ "${{ runner.os }}" = "macOS" ]; then
             shopt -s nullglob
-            data_dirs=(target/${{ matrix.target }}/release/build/espeak-rs-sys-*/out/build/espeak-ng-data)
-            if [ "${#data_dirs[@]}" -ne 1 ] || [ ! -f "${data_dirs[0]}/phontab" ]; then
-              echo "Expected one compiled espeak-rs-sys data directory with phontab; found ${#data_dirs[@]}."
+            # Cargo's older build-dir layout is build/<pkg>-<hash>/out; the newer one is
+            # build/<pkg>/<hash>/out. A restored cache can leave stale copies, so take the
+            # most recently built data directory that has phontab.
+            build_root="target/${{ matrix.target }}/release/build"
+            candidates=("$build_root"/espeak-rs-sys-*/out/build/espeak-ng-data "$build_root"/espeak-rs-sys/*/out/build/espeak-ng-data)
+            data_dir=""
+            for candidate in "${candidates[@]}"; do
+              [ -f "$candidate/phontab" ] || continue
+              if [ -z "$data_dir" ] || [ "$candidate/phontab" -nt "$data_dir/phontab" ]; then
+                data_dir="$candidate"
+              fi
+            done
+            if [ -z "$data_dir" ]; then
+              echo "No compiled espeak-rs-sys espeak-ng-data with phontab under $build_root (checked ${#candidates[@]} candidates)."
               exit 1
             fi
-            cp -R "${data_dirs[0]}" dist/espeak-ng-data
+            echo "Bundling eSpeak data from $data_dir"
+            cp -R "$data_dir" dist/espeak-ng-data
           fi
 
           cd dist
