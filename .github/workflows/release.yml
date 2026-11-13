@@ -128,7 +128,7 @@ jobs:
       - gate-ci
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Package corresponding source
         id: package
@@ -200,7 +200,7 @@ jobs:
           echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload source release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: |
@@ -228,14 +228,15 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: release-${{ runner.os }}-${{ matrix.target }}-v1
 
@@ -372,14 +373,14 @@ jobs:
           shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.sha256
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: |
             ${{ matrix.name }}.*
 
       - name: Upload artifacts for manifest
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-${{ matrix.target }}
           path: |
@@ -390,7 +391,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Download macOS artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: release-*apple-darwin
           merge-multiple: true
@@ -489,7 +490,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: release-*
           merge-multiple: true
@@ -532,7 +533,7 @@ jobs:
           mv manifest.sorted.json manifest.json
 
       - name: Upload manifest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: manifest.json

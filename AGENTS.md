@@ -86,8 +86,7 @@ cargo clippy -p koko --all-targets --no-deps -- -D warnings
 
 - Runs monthly and on manual dispatch
 - Fetches upstream heads
-- Reports commit drift in workflow summary/artifact
-- Creates/updates an issue: `Upstream Sync Report (Manual Review Required)`
+- Reports commit drift in the workflow run summary and the `upstream-report` artifact (issues are disabled on this repository)
 
 It does **not** merge, rebase, or modify code.
 
