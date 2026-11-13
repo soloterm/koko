@@ -48,7 +48,7 @@ struct SpeechRequest {
     input: String,
 
     #[serde(default)]
-    voice: Voice,
+    voice: Option<Voice>,
 
     // Must be WAV
     #[allow(dead_code)]
@@ -266,7 +266,7 @@ async fn handle_tts(
     Json(SpeechRequest {
         model: _,
         input,
-        voice: Voice(voice),
+        voice,
         response_format,
         speed: Speed(speed),
         initial_silence,
@@ -278,8 +278,8 @@ async fn handle_tts(
     let lan = language.unwrap_or_else(|| "en-us".to_string());
     let auto_detect_language = auto_detect.unwrap_or(false);
 
-    // Determine if we should force style (always false for API)
-    let force_style = false;
+    let force_style = voice.is_some();
+    let Voice(voice) = voice.unwrap_or_default();
 
     // Log info about the request
     if auto_detect_language {
@@ -328,7 +328,7 @@ async fn handle_tts(
     Response::builder()
         .header(header::CONTENT_TYPE, content_type)
         .body(audio_data.into())
-        .map_err(|e| SpeechError::Mp3Conversion(std::io::Error::new(std::io::ErrorKind::Other, e)))
+        .map_err(|e| SpeechError::Mp3Conversion(std::io::Error::other(e)))
 }
 
 // TTSManager-based handlers for dynamic model switching
@@ -372,7 +372,7 @@ async fn handle_tts_with_manager(
     Json(SpeechRequest {
         model: _,
         input,
-        voice: Voice(voice),
+        voice,
         response_format,
         speed: Speed(speed),
         initial_silence,
@@ -384,8 +384,8 @@ async fn handle_tts_with_manager(
     let lan = language.unwrap_or_else(|| "en-us".to_string());
     let auto_detect_language = auto_detect.unwrap_or(false);
 
-    // Determine if we should force style (always false for API)
-    let force_style = false;
+    let force_style = voice.is_some();
+    let Voice(voice) = voice.unwrap_or_default();
 
     // Log info about the request
     if auto_detect_language {
@@ -435,5 +435,5 @@ async fn handle_tts_with_manager(
     Response::builder()
         .header(header::CONTENT_TYPE, content_type)
         .body(audio_data.into())
-        .map_err(|e| SpeechError::Mp3Conversion(std::io::Error::new(std::io::ErrorKind::Other, e)))
+        .map_err(|e| SpeechError::Mp3Conversion(std::io::Error::other(e)))
 }

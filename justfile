@@ -197,6 +197,31 @@ upstream-pick *commits:
 
 # === Release ===
 
+# Download and verify the pinned Kokoro v1.0 model assets without uploading them
+model-assets-prepare:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="${MODEL_ASSETS_DIR:-target/model-v1.0}"
+    mkdir -p "$out"
+    base="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+    curl --fail --location --retry 3 --output "$out/kokoro-v1.0.onnx" "$base/kokoro-v1.0.onnx"
+    curl --fail --location --retry 3 --output "$out/voices-v1.0.bin" "$base/voices-v1.0.bin"
+    cat > "$out/SHA256SUMS" <<'EOF'
+    7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5  kokoro-v1.0.onnx
+    bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d  voices-v1.0.bin
+    EOF
+    (cd "$out" && shasum -a 256 -c SHA256SUMS)
+
+# Create a draft model-v1.0 release after downloading and verifying the assets
+model-assets-release: model-assets-prepare
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="${MODEL_ASSETS_DIR:-target/model-v1.0}"
+    gh release create model-v1.0 \
+      "$out/kokoro-v1.0.onnx" "$out/voices-v1.0.bin" "$out/SHA256SUMS" \
+      --draft --latest=false --title "model-v1.0" \
+      --notes "Kokoro-82M v1.0 model assets (Apache-2.0). Original ONNX export and voices: thewh1teagle/kokoro-onnx model-files-v1.0. See NOTICE in this repository."
+
 # Bump version and release (requires cargo-release)
 release *args:
     cargo release {{args}}

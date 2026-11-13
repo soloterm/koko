@@ -7,15 +7,14 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
+# Issues are disabled on this repository; the report lives in the run summary
+# and the upstream-report artifact.
 jobs:
   report:
     runs-on: ubuntu-latest
-    outputs:
-      report: ${{ steps.build-report.outputs.report }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
@@ -39,8 +38,7 @@ jobs:
           git fetch kokorox main --prune
           git fetch kokoros main --prune
 
-      - id: build-report
-        name: Build upstream report
+      - name: Build upstream report
         run: |
           set -euo pipefail
 
@@ -81,72 +79,8 @@ jobs:
 
           cat upstream-report.md >> "$GITHUB_STEP_SUMMARY"
 
-          echo "report<<EOF" >> "$GITHUB_OUTPUT"
-          cat upstream-report.md >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
       - name: Upload report artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: upstream-report
           path: upstream-report.md
-
-  sync-issue:
-    needs: report
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create or update upstream sync issue
-        uses: actions/github-script@v8
-        env:
-          REPORT_BODY: ${{ needs.report.outputs.report }}
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const title = 'Upstream Sync Report (Manual Review Required)';
-            const label = 'upstream-sync';
-            const body = process.env.REPORT_BODY;
-
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: label });
-            } catch (err) {
-              if (err.status === 404) {
-                await github.rest.issues.createLabel({
-                  owner,
-                  repo,
-                  name: label,
-                  color: '1f6feb',
-                  description: 'Tracking manual upstream sync reviews',
-                });
-              } else {
-                throw err;
-              }
-            }
-
-            const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner,
-              repo,
-              state: 'open',
-              labels: label,
-              per_page: 100,
-            });
-
-            const existing = issues.find((issue) => issue.title === title);
-
-            if (existing) {
-              await github.rest.issues.update({
-                owner,
-                repo,
-                issue_number: existing.number,
-                title,
-                body,
-              });
-            } else {
-              await github.rest.issues.create({
-                owner,
-                repo,
-                title,
-                body,
-                labels: [label],
-              });
-            }

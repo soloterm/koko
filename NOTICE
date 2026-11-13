@@ -8,8 +8,10 @@ This product is based on kokorox (https://github.com/WismutHansen/kokorox)
 which is based on Kokoros (https://github.com/lucasjinreal/Kokoros)
 by Lucas Jin.
 
-This product includes the Kokoro-82M model (https://huggingface.co/hexgrad/Kokoro-82M)
-licensed under the Apache License 2.0.
+The separate model-v1.0 assets contain the Kokoro-82M model and voices
+(https://huggingface.co/hexgrad/Kokoro-82M), licensed under the Apache License 2.0.
+The ONNX export and combined voices file are distributed by thewh1teagle/kokoro-onnx
+(https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0).
 
 Third-party component licenses listed here do not change the license of this fork itself,
 which remains GPL-3.0-only.

@@ -21,18 +21,18 @@ For third-party attribution details, see `NOTICE` and tracked local modification
 Prerequisites:
 
 - Rust stable toolchain
-- `espeak-ng` development libraries
 - `pkg-config`
+- Opus development libraries
 
 Examples:
 
 ```bash
 # macOS
-brew install espeak-ng pkg-config
+brew install pkg-config opus
 
 # Ubuntu/Debian
 sudo apt-get update
-sudo apt-get install -y espeak-ng libespeak-ng-dev pkg-config
+sudo apt-get install -y pkg-config libopus-dev libasound2-dev
 ```
 
 Build:
@@ -64,8 +64,35 @@ Release workflows produce per-platform archives containing:
 - `koko` / `koko.exe`
 - `LICENSE`
 - `NOTICE`
+- `espeak-ng-data/` alongside `koko` in the macOS archive, copied from the
+  `espeak-rs-sys` build so it matches the statically linked eSpeak library
 
 Checksums are published alongside artifacts in GitHub Releases.
+
+The macOS archive extracts to this layout:
+
+```text
+koko
+espeak-ng-data/
+  phontab
+  ...
+LICENSE
+NOTICE
+```
+
+Keep `koko` and `espeak-ng-data/` together when installing the macOS binary.
+At startup, `koko` uses the data beside its canonical executable path. You can
+instead set `PIPER_ESPEAKNG_DATA_DIRECTORY` to the **parent** of
+`espeak-ng-data/`; `ESPEAK_DATA_PATH` also accepts that parent or the data
+directory itself. `koko` exits with an error when it cannot find `phontab`.
+
+Model files are distributed separately. `just model-assets-prepare` downloads
+`kokoro-v1.0.onnx` and `voices-v1.0.bin` from the
+[`model-files-v1.0` upstream release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0)
+to `target/model-v1.0/`, verifies their SHA-256 hashes, and writes `SHA256SUMS`.
+`just model-assets-release` performs the same verification and uploads those
+three files to a draft `model-v1.0` release. The model and voices are Apache-2.0;
+see `NOTICE`.
 
 ## Upstream Maintenance
 

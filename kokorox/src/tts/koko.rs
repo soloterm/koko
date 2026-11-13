@@ -817,26 +817,8 @@ impl TTSKoko {
         // Determine if we're using custom voices
         let is_custom = self.is_using_custom_voices(&self.voices_path);
 
-        // Determine which style to use
-        // Special case: if force_style is true but the style is the default
-        // English voice (af_heart) while the language is non-English, do not
-        // force the style. This avoids accidentally overriding language-
-        // appropriate voices when users pass --force-style without changing
-        // the default style.
-        let force_style_effective = if force_style
-            && style_name == "af_heart"
-            && !language.starts_with("en")
-        {
-            println!(
-                "NOTE: Ignoring forced style 'af_heart' for non-English language '{}'; using language-appropriate voice.",
-                language
-            );
-            false
-        } else {
-            force_style
-        };
-
-        let effective_style = if !force_style_effective {
+        // Determine which style to use.
+        let effective_style = if !force_style {
             // Try to automatically select a voice appropriate for the language
             // This applies to both auto-detect and manual language selection modes
             let default_style = get_default_voice_for_language(&language, is_custom);
