@@ -10,6 +10,7 @@ This file tracks modifications made in the `soloterm/koko` fork and correspondin
 - Accept the pinned v1.0 ONNX model's `tokens` input and honor explicit model/voices files in the OpenAI server.
 - Allow `-m` and `-d` after `openai` so Solo's sidecar launch command can pass explicit assets.
 - Honor an explicit `voice` in OpenAI speech requests while retaining automatic voice selection when omitted.
+- Build macOS release archives without AppleDouble entries. Release verification now rejects any entry outside `koko`, `LICENSE`, `NOTICE` and `espeak-ng-data/`, and requires the Solo signing Team ID.
 
 ## 2026-02-13
 

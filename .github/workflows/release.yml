@@ -351,7 +351,9 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then
             7z a ../${{ matrix.name }}.zip *
           else
-            tar czf ../${{ matrix.name }}.tar.gz *
+            # Keep macOS tar from adding AppleDouble ._* entries; Solo's installer
+            # rejects any archive entry outside koko, LICENSE, NOTICE, espeak-ng-data/.
+            COPYFILE_DISABLE=1 tar czf ../${{ matrix.name }}.tar.gz *
           fi
 
       - name: Generate checksums (Windows)
@@ -417,6 +419,17 @@ jobs:
 
             shasum -a 256 -c "$checksum_file"
 
+            # Allowlist Solo's installer accepts, and never AppleDouble (._*) files.
+            entries="$(tar tzf "$archive")"
+            outside_allowlist="$(printf '%s\n' "$entries" | grep -Ev '^(koko|LICENSE|NOTICE|espeak-ng-data/?|espeak-ng-data/.+)$' || true)"
+            appledouble="$(printf '%s\n' "$entries" | grep -E '(^|/)\._' || true)"
+            unexpected_entries="$(printf '%s\n%s\n' "$outside_allowlist" "$appledouble" | sed '/^$/d' | sort -u)"
+            if [ -n "$unexpected_entries" ]; then
+              echo "Unexpected entries inside archive (Solo's installer rejects them):"
+              echo "$unexpected_entries"
+              exit 1
+            fi
+
             extract_dir="$(mktemp -d)"
             tar xzf "$archive" -C "$extract_dir"
 
@@ -447,6 +460,13 @@ jobs:
             echo "codesign verification: $archive"
             codesign --verify --deep --strict --verbose=2 "$binary"
             codesign -dvv "$binary"
+
+            # Solo pins this Team ID and refuses koko binaries signed by anyone else.
+            team_id="$(codesign -dvv "$binary" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+            if [ "$team_id" != "BJM8DHBNGC" ]; then
+              echo "Unexpected signing Team ID '$team_id'; Solo requires BJM8DHBNGC."
+              exit 1
+            fi
 
             echo "spctl assessment: $archive"
             set +e
