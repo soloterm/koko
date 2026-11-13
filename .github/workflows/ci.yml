@@ -116,6 +116,12 @@ jobs:
         with:
           shared-key: ci-${{ runner.os }}-v1
 
+      # ort-sys 2.0.0-rc.11 copies onnxruntime DLLs into target/<profile>/{examples,deps}
+      # without creating them; on Windows the symlink fallback fails on a cold target dir.
+      - name: Prepare ort-sys DLL directories (Windows)
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path target/debug/examples, target/debug/deps | Out-Null
+
       - name: Compile check (Windows)
         run: cargo check -p koko --locked
 

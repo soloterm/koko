@@ -248,6 +248,13 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y pkg-config libopus-dev libasound2-dev
 
+      # ort-sys 2.0.0-rc.11 copies onnxruntime DLLs into target/<triple>/release/{examples,deps}
+      # without creating them; on Windows the symlink fallback fails on a cold target dir.
+      - name: Prepare ort-sys DLL directories (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path target/${{ matrix.target }}/release/examples, target/${{ matrix.target }}/release/deps | Out-Null
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
