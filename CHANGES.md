@@ -11,6 +11,8 @@ This file tracks modifications made in the `soloterm/koko` fork and correspondin
 - Allow `-m` and `-d` after `openai` so Solo's sidecar launch command can pass explicit assets.
 - Honor an explicit `voice` in OpenAI speech requests while retaining automatic voice selection when omitted.
 - Build macOS release archives without AppleDouble entries. Release verification now rejects any entry outside `koko`, `LICENSE`, `NOTICE` and `espeak-ng-data/`, and requires the Solo signing Team ID.
+- Pin every workflow action to a commit SHA, give CI read-only contents permission, and stop opening upstream-report issues (issues are disabled).
+- Refresh `Cargo.lock` with semver-compatible updates. This clears 27 RustSec advisories, including openssl, rustls, rustls-webpki, h2 0.4, tar and zstd. `ort` stays at 2.0.0-rc.11 because rc.15 breaks the session API. `.cargo/audit.toml` documents the five advisories that remain unreachable: zip extraction and the hf-hub h2 0.3 path.
 
 ## 2026-02-13
 

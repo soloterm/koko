@@ -1,0 +1,18 @@
+# cargo-audit configuration (also read by rustsec/audit-check in CI).
+#
+# Each ignore below needs a major-version upgrade that is not yet available
+# semver-compatibly, and none is reachable in how koko runs. Revisit when
+# ndarray-npy moves to zip >= 9 or hf-hub drops reqwest 0.11.
+[advisories]
+ignore = [
+  # zip 6.x (via ndarray-npy) and 7.x (direct, kokorox): all four advisories
+  # concern ZipArchive::extract / ZipStreamReader::extract. koko never extracts:
+  # ndarray-npy reads .npz entries in memory, and kokorox only uses ZipWriter.
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
+  # h2 0.3.27 via hyper 0.14 / reqwest 0.11 / hf-hub: only used to download
+  # models from the Hugging Face cache. Solo always passes explicit -m/-d files.
+  "RUSTSEC-2026-0258",
+]
